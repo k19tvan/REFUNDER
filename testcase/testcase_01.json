@@ -1,0 +1,81 @@
+{
+  "testcase_id": "TC-01",
+  "name": "Hóa đơn ăn tối tiếp khách bị mờ số tiền thanh toán",
+  "category": "THIEU_THONG_TIN",
+  "description": "Nhân viên nộp chi phí ăn tối tiếp khách đối tác. Hình ảnh hóa đơn bị nhòe mực tại dòng tổng thanh toán cuối cùng (không rõ là $450.00 hay $480.00). Tác tử tuân thủ nguyên tắc không phỏng đoán số tiền, kích hoạt phán quyết ESCALATE và đặt câu hỏi chất lượng gửi Nhân viên để xác nhận số tiền chính xác.",
+  "policy_reference": {
+    "document": "FIN-EXP-001 (Global Travel & Expense Policy)",
+    "article_number": "Article 3.3 & Article 11",
+    "article_title": "Quy định về Hóa đơn & Chứng từ hợp lệ / Xử lý hóa đơn không trích xuất được",
+    "rule_clause": "Hóa đơn hợp lệ phải thể hiện rõ: Tên nhà cung cấp, ngày giao dịch, chi tiết từng món và số tiền thanh toán thực tế. Nghiêm cấm hệ thống tự ý phỏng đoán dữ liệu số tiền nghi vấn."
+  },
+  "input": {
+    "form_data_payload": {
+      "employee_name": "Sarah Miller",
+      "employee_id": "EMP-1099",
+      "approver_id": "MGR-2005",
+      "expense_category": "meal",
+      "claimed_amount": 450.00,
+      "currency": "USD",
+      "expense_date": "2026-09-10",
+      "booking_platform": "Direct Payment",
+      "description": "Team dinner with strategic partner client. Invoice is blurry at the bottom total amount line.",
+      "days_since_expense": 3
+    },
+    "extracted_receipt_payload": {
+      "is_readable": false,
+      "vendor_name": "The Palm Steakhouse",
+      "receipt_date": "2026-09-10",
+      "receipt_currency": "USD",
+      "total_amount": null,
+      "tax_amount": null,
+      "tip_amount": null,
+      "line_items": [
+        {
+          "item": "Dry-aged Ribeye Steaks (Group Dinner)",
+          "price": 320.00
+        },
+        {
+          "item": "Appetizers & Mineral Water",
+          "price": 85.00
+        },
+        {
+          "item": "Total Line (Illegible - Ink smudge $450 or $480)",
+          "price": null
+        }
+      ],
+      "error_description": "Hóa đơn bị mờ và nhòe mực tại dòng tổng thanh toán cuối cùng, không thể khẳng định chắc chắn giữa $450.00 và $480.00."
+    },
+    "system_context": {
+      "current_date": "2026-09-13",
+      "employee_location": "US",
+      "manager_id": "MGR-2005",
+      "days_since_expense": 3,
+      "employee_monthly_spent": 1250.00,
+      "monthly_limit": 10000.00
+    }
+  },
+  "expected_agent_verdict": {
+    "decision_status": "ESCALATE",
+    "escalation_category": "THIEU_THONG_TIN",
+    "escalation_target": "Requester",
+    "escalation_question": "Hóa đơn ăn tối tiếp khách bị mờ tại dòng tổng thanh toán. Số tiền thực tế bạn đã thanh toán là $450.00 hay $480.00?",
+    "reasoning_log": "Bằng chứng khách quan (hóa đơn) có chất lượng hình ảnh không đảm bảo (is_readable = false), mờ dòng tổng thanh toán. Tuân thủ nguyên tắc không phỏng đoán dữ liệu tài chính, tác tử dừng tự động hóa và chuyển tiếp câu hỏi làm rõ đến Nhân viên yêu cầu.",
+    "policy_reference": "Article 3.3 (Quy định về hóa đơn và chứng từ) & Article 11 (Hóa đơn thất lạc / Không trích xuất được)",
+    "confidence_score": 0.97
+  },
+  "human_in_the_loop_resolution": {
+    "responder_role": "Requester",
+    "responder_id": "EMP-1099",
+    "answer_action": "CONFIRM_AMOUNT",
+    "answer_notes": "Số tiền thực tế trừ trên sao kê thẻ tín dụng ngân hàng là $450.00 (sau khi đã áp dụng mã giảm giá của nhà hàng).",
+    "expected_final_resolution": {
+      "final_decision": "APPROVE",
+      "adjusted_amount": 450.00,
+      "currency": "USD",
+      "status": "ROUTED_TO_ERP_PAYMENT",
+      "audit_trail": "Escalation THIEU_THONG_TIN addressed by Requester Sarah Miller. Confirmed actual amount $450.00 backed by credit card statement. Routed to ERP for payment."
+    }
+  }
+}
+
