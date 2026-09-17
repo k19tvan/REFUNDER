@@ -3,7 +3,7 @@ import uuid
 from typing import Optional
 from fastapi import FastAPI, File, Form, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
-from modules.agent import agent
+from modules.agent import agent, RefundAgentState
 import uvicorn
 
 app = FastAPI(title="Refunder Backend")
@@ -17,9 +17,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------------------------------------------------
-# 1. POLICY ENDPOINT
-# ---------------------------------------------------------
 POLICY_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "documentation", "policy.md")
 )
@@ -50,9 +47,6 @@ async def get_policy():
     }
 
 
-# ---------------------------------------------------------
-# 2. CHAT ENDPOINT (Nhận text và image từ UI)
-# ---------------------------------------------------------
 @app.post("/api/chat")
 @app.post("/api/chat/")
 async def chat_endpoint(
@@ -77,7 +71,7 @@ async def chat_endpoint(
             f.write(await receipt_file.read())
 
     # Khởi tạo state gửi vào LangGraph
-    input_state = {
+    input_state: RefundAgentState = {
         "session_id": effective_session_id,
         "claim_id": claim_id,
         "action": action or "MESSAGE",

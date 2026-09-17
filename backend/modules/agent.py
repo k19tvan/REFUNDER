@@ -116,7 +116,7 @@ def parse_claim_message_tool(message: str) -> Dict[str, Any]:
 # ---------------------------------------------------------
 # 2. STATE DEFINITION (AGENT STATE)
 # ---------------------------------------------------------
-class RefundAgentState(TypedDict):
+class RefundAgentState(TypedDict, total=False):
     session_id: str
     claim_id: Optional[str]
     action: str
