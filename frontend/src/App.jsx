@@ -67,9 +67,9 @@ export default function App() {
           />
         )}
 
-        {/* View 3: Refund Request */}
+        {/* View 3: Refund Request (Chatbot) */}
         {activeTab === 'refund_request' && (
-          <RefundRequest />
+          <RefundRequest onNavigateToPolicy={() => setActiveTab('policy')} />
         )}
       </main>
     </>

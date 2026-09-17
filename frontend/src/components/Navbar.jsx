@@ -4,7 +4,7 @@ export default function Navbar({ activeTab, setActiveTab }) {
   const tabs = [
     { id: 'introduction', label: 'Introduction', icon: 'fa-compass' },
     { id: 'policy', label: 'Company Policy', icon: 'fa-book-bookmark' },
-    { id: 'refund_request', label: 'Refund Request', icon: 'fa-receipt' },
+    { id: 'refund_request', label: 'Refund Chatbot', icon: 'fa-comments-dollar' },
   ];
 
   return (

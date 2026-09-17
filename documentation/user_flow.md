@@ -1,35 +1,35 @@
-# REFUNDER: Luồng Xử Lý & Đặc Tả Pipeline (Single API: /api/refund)
+# REFUNDER: Luồng Xử Lý & Đặc Tả Pipeline Chatbot (POST /api/chat/)
 
-> **Kiến trúc hệ thống**: Toàn bộ quy trình hoàn ứng được đóng gói trong **1 API duy nhất: `POST /api/refund`**. Bên trong là chuỗi hàm (workflow chaining) liên kết chặt chẽ theo sơ đồ kiến trúc [pipeline.png](file:///workspace/projects/REFUNDER/images/pipeline.png).
+> **Kiến trúc hệ thống**: Quy trình hoàn ứng được tương tác qua **Chatbot Interface** thông qua endpoint chính **`POST /api/chat/`** (và hỗ trợ tương thích `POST /api/refund`). Dựa trên sơ đồ kiến trúc [pipeline.png](file:///workspace/projects/REFUNDER/images/pipeline.png) và [agent_pipeline.png](file:///workspace/projects/REFUNDER/images/agent_pipeline.png).
 
 ---
 
-## 1. Sơ Đồ Kiến Trúc Pipeline (Ánh xạ theo images/pipeline.png)
+## 1. Sơ Đồ Kiến Trúc Pipeline (Ánh xạ chuẩn theo pipeline.png & agent_pipeline.png)
 
 ```mermaid
 flowchart LR
-    User["👤 User"]
+    User["👤 User / Employee"]
     
-    subgraph INPUT ["📦 INPUT"]
-        Form["📝 Form\n(form_data.py)"]:::redNode
-        Receipt["🧾 Receipt Image"]
+    subgraph INPUT ["📦 INPUT (Text + Image)"]
+        ChatMsg["💬 Chat Message\n(entity_parser.py)"]:::redNode
+        Receipt["🧾 Receipt Image / PDF"]
         OCR["🔍 INFORMATION EXTRACTION\n(ocr_receipt.py)"]:::yellowNode
         Receipt --> OCR
     end
 
     Context(("🟢 Master Context\n(master_context.py)")):::greenNode
-    Agent["🤖 Agent Arbitration\n(decision.py)"]
-    Tools["🧰 Tools / MCP\n(tools.py)"]:::blueNode
+    Agent["🤖 Agent Arbitration Referee\n(arbitrator.py)"]
+    Tools["🧰 Tools / MCP Server\n(POST /mcp/...)"]:::blueNode
 
-    Decision(("🟣 Decision")):::purpleNode
+    Decision(("🟣 Decision Payload")):::purpleNode
     
-    Approve["🟢 Approve"]
-    Reject["🔴 Reject"]
-    Escalation["🟠 Escalation"]
+    Approve["🟢 Approve (ERP Settlement)"]
+    Reject["🔴 Reject (Policy Violation)"]
+    Escalation["🟠 Escalation (Human-in-the-Loop)"]
 
-    %% Luồng chính
-    User -->|"POST /api/refund"| INPUT
-    Form --> Context
+    %% Main Flow
+    User -->|"POST /api/chat/"| INPUT
+    ChatMsg --> Context
     OCR --> Context
     Context --> Agent
     
@@ -40,9 +40,9 @@ flowchart LR
     Decision --> Reject
     Decision --> Escalation
 
-    %% Vòng lặp Human in the loop
-    Escalation -->|"Question (Hỏi lại)"| User
-    User -->|"Answer (Trả lời) ➔ POST /api/refund"| Agent
+    %% Human Feedback Loop
+    Escalation -->|"Asking Human Tool\n(In-chat Escalation Card)"| User
+    User -->|"Human Feedback (Chat Answer)\nPOST /api/chat/"| Agent
 
     classDef redNode fill:#fee2e2,stroke:#ef4444,stroke-width:2px,color:#991b1b;
     classDef yellowNode fill:#fef9c3,stroke:#eab308,stroke-width:2px,color:#854d0e;
@@ -53,76 +53,101 @@ flowchart LR
 
 ---
 
-## 2. Chuỗi Hàm Trong Quy Trình (Chaining Workflow)
+## 2. Chuỗi Hàm Trong Quy Trình Chaining Workflow
 
-Toàn bộ quy trình xử lý bên trong `POST /api/refund` được xâu chuỗi tuần tự qua các file độc lập:
-
-| Bước | File Chức Năng | Hàm Thực Thi | Dữ Liệu Đầu Vào (Input) | Dữ Liệu Đầu Ra (Output) |
+| Bước | Thành Phần Node | File Phụ Trách | Dữ Liệu Đầu Vào (Input) | Dữ Liệu Đầu Ra (Output) |
 |---|---|---|---|---|
-| **1. Form (🔴)** | `backend/app/form_data.py` | `parse_form_data()` | `raw_form: str \| dict` | `FormData` model |
-| **2. Bóc Tách (🟡)** | `backend/app/ocr_receipt.py` | `extract_receipt_info()` | `receipt_file: UploadFile`, `hint: str` | `ExtractedReceipt` model |
-| **3. Hợp Nhất (🟢)** | `backend/app/master_context.py` | `build_master_context()` | `form_data`, `extracted_receipt`, `user_answer` | `MasterContext` model |
-| **4. Công Cụ (Blue)** | `backend/app/tools.py` | `execute_mcp_tool()` | `tool_name: str`, `arguments: dict` | `ToolCallResponse` model |
-| **5. Phán Quyết (🟣)** | `backend/app/decision.py` | `arbitrate_claim()` | `context: MasterContext` | `Decision` model (`Approve` / `Reject` / `Escalation`) |
+| **1. Trích xuất hội thoại (🔴)** | Form Data Payload | `backend/app/extraction/entity_parser.py` | Tin nhắn tự nhiên của user (`message: str`) | `FormData` model (Amount, Category, Description) |
+| **2. Bóc tách hóa đơn (🟡)** | Extracted Receipt Payload | `backend/app/extraction/ocr_receipt.py` | Ảnh hóa đơn (`receipt_file: UploadFile`) | `ExtractedReceipt` (Merchant, Total, Items) |
+| **3. Tổng hợp bối cảnh (🟢)** | Master Context Payload | `backend/app/context/master_context.py` | `form_data`, `extracted_receipt`, `system_context` | `MasterContext` model |
+| **4. Công cụ mở rộng (🔵)** | MCP Tools Server | `backend/app/mcp/tools.py` | Tên tool & tham số (`query`, `amount`) | `ToolCallLog` (`policy_search`, `verify_budget`) |
+| **5. Trọng tài phán quyết (🟣)** | Decision Payload | `backend/app/agent/arbitrator.py` | `MasterContext` | `Decision` (`APPROVE`, `REJECT`, `ESCALATE`) |
 
 ---
 
-## 3. Đặc Tả Endpoint Duy Nhất: `POST /api/refund`
+## 3. Đặc Tả Endpoint Chính: `POST /api/chat/`
 
-* **URL**: `POST /api/refund` (hoặc `POST /api/refund/`)
-* **Headers**: `multipart/form-data` hoặc `application/json`
+* **URL**: `POST /api/chat/` (và alias `POST /api/chat`)
+* **Content-Type**: `multipart/form-data` hoặc `application/json`
 
-### 3.1. Các tham số đầu vào (Input)
-* `form_data` (hoặc JSON Body):
-  * `employee_id`: Mã nhân viên (ví dụ: `EMP-1001`)
-  * `claimed_amount`: Số tiền yêu cầu hoàn ứng (ví dụ: `45.0`)
-  * `currency`: Đơn vị tiền tệ (`USD`, `VND`...)
-  * `expense_category`: Hạng mục chi phí (`Meals`, `Travel`, `Equipment`...)
-  * `description`: Mục đích chi tiêu / giải trình
-  * `claim_id` *(tùy chọn)*: Mã hồ sơ cũ nếu đang phản hồi lại câu hỏi Escalation
-  * `answer` *(tùy chọn)*: Câu trả lời của User khi giải quyết câu hỏi từ Agent
-* `receipt_file` *(tùy chọn)*: File ảnh hoặc PDF của hóa đơn vật lý.
+### 3.1. Tham số đầu vào (Input)
+* `session_id` *(str, tùy chọn)*: ID phiên hội thoại để duy trì ngữ cảnh nhiều lượt.
+* `message` *(str)*: Lời nhắn yêu cầu hoàn ứng từ nhân viên (hoặc câu trả lời giải trình).
+* `receipt_file` *(UploadFile, tùy chọn)*: Ảnh chụp hóa đơn hoặc file PDF hóa đơn điện tử.
+* `claim_id` *(str, tùy chọn)*: Mã hồ sơ claim đang trong trạng thái `ESCALATE`.
+* `action` *(str, mặc định "MESSAGE")*: `"MESSAGE"` hoặc `"RESOLVE_ESCALATION"`.
 
-### 3.2. Cấu trúc kết quả trả về (Output)
+### 3.2. Cấu trúc kết quả trả về (Output Protocol)
 ```json
 {
+  "session_id": "sess_88fa10b2",
   "claim_id": "CLM-35FA9048",
-  "status": "Approve",
-  "decision": {
-    "status": "Approve",
-    "reasoning": "Expense is fully compliant with standard meal and travel allowances.",
-    "question": null,
-    "policy_reference": "Article 4 & Article 6.1: Standard expense allowances (<= $100/day)",
-    "confidence_score": 0.99,
-    "claim_id": "CLM-35FA9048"
-  },
-  "extracted_receipt": {
-    "is_readable": true,
-    "vendor_name": "Panera Bread / Business Lunch",
-    "receipt_date": "2026-09-12",
-    "receipt_currency": "USD",
-    "total_amount": 45.0,
-    "tax_amount": 3.5,
-    "tip_amount": 0.0,
-    "line_items": [
-      { "item": "Roasted Turkey Sandwich", "price": 28.0 },
-      { "item": "Sparkling Water & Salad", "price": 13.5 },
-      { "item": "Sales Tax", "price": 3.5 }
+  "reply": "✅ Your refund claim has been verified and APPROVED. All receipt items match policy allowances for business meals (<= $100/day).",
+  "step_status": "APPROVED",
+  "pipeline_nodes": {
+    "form_data": {
+      "employee_id": "EMP-1042",
+      "claimed_amount": 45.0,
+      "currency": "USD",
+      "expense_category": "Meals & Entertainment",
+      "description": "Standard business lunch with client partner",
+      "booking_platform": "Direct Payment"
+    },
+    "extracted_receipt": {
+      "is_readable": true,
+      "vendor_name": "Panera Bread",
+      "receipt_date": "2026-09-12",
+      "receipt_currency": "USD",
+      "total_amount": 45.0,
+      "tax_amount": 3.5,
+      "tip_amount": 0.0,
+      "line_items": [
+        { "item": "Roasted Turkey Sandwich", "price": 28.0 },
+        { "item": "Sparkling Water & Salad", "price": 13.5 },
+        { "item": "Sales Tax", "price": 3.5 }
+      ]
+    },
+    "master_context": {
+      "user_form": { ... },
+      "extracted_receipt": { ... },
+      "system_context": {
+        "current_date": "2026-09-15",
+        "employee_location": "US",
+        "manager_id": "MGR-2005",
+        "policy_version": "FIN-EXP-001"
+      }
+    },
+    "tool_calls": [
+      {
+        "tool_name": "policy_search",
+        "arguments": { "query": "business lunch allowance" },
+        "result": "Article 4: Standard meal rate <= $100/day permitted"
+      }
     ],
-    "error_description": null
-  },
-  "master_context": {
-    "user_form": { ... },
-    "extracted_receipt": { ... },
-    "system_context": { ... },
-    "user_answer": null
+    "decision": {
+      "decision_status": "APPROVE",
+      "reasoning_log": "Receipt total matches claimed amount ($45.00). No alcohol items. Within standard allowance limit.",
+      "escalation_target": "System Automated (ERP Accounting)",
+      "escalation_category": "NONE",
+      "escalation_question": null,
+      "policy_reference": "Article 4 & Article 6.1: Standard meal allowances",
+      "confidence_score": 0.99
+    }
   }
 }
 ```
 
 ---
 
-## 4. Vòng Lặp Phản Hồi (Escalation & User Answer Loop)
+## 4. Vòng Lặp Human-in-the-Loop Trực Tiếp Trong Chat
 
-1. **Lần 1**: User nộp đơn ➔ Nếu hóa đơn mờ hoặc nghi vấn ➔ Agent trả về `status: "Escalation"` kèm `question: "Hóa đơn mờ, bạn trả bao nhiêu?"`.
-2. **Lần 2**: User gửi câu trả lời qua chính `POST /api/refund` (kèm `claim_id` và `answer`) ➔ Agent tiếp nhận câu trả lời ➔ Đổi trạng thái thành `Approve` và hoàn tất quy trình.
+1. **Lần 1 (Gửi yêu cầu & Phát hiện ngoại lệ)**:
+   - User nhắn: *"Team dinner with strategic partner client. Invoice is blurry at the bottom."*
+   - Chatbot OCR phát hiện hóa đơn bị nhòe mực ➔ Ra quyết định `decision_status = "ESCALATE"`.
+   - Trực tiếp render **`EscalationCard`** ngay trong luồng tin nhắn:
+     > *"Hóa đơn cho khoản chi bị mờ ở dòng tổng tiền ($450 hay $480). Số tiền thực tế thanh toán trên sao kê thẻ là bao nhiêu?"*
+
+2. **Lần 2 (Nhân viên phản hồi giải trình)**:
+   - User chọn gợi ý hoặc gõ: *"Confirm actual total paid is $450.00 (from card statement)"*.
+   - Gửi lại qua `POST /api/chat/` với `action="RESOLVE_ESCALATION"`.
+   - Agent tiếp nhận lời khai làm bằng chứng bổ sung (Điều 11) ➔ Cập nhật phán quyết thành `APPROVE` ➔ Bắn lệnh thanh toán sang ERP.
